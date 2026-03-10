@@ -97,7 +97,8 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
 
         dtype = next(self.vae.parameters()).dtype
         images = (images - 0.5) * 2.0
-        posterior = self.vae.encode(images.to(dtype)).latent_dist
+        images = images.to(device=self._execution_device, dtype=dtype)
+        posterior = self.vae.encode(images).latent_dist
         latents = posterior.sample() * self.vae.config.scaling_factor
 
         latents = rearrange(latents, '(b n) c h w -> b n c h w', b=B)
@@ -136,16 +137,16 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
         ref_latents = self.encode_images(image)
 
         def convert_pil_list_to_tensor(images):
-            bg_c = [1., 1., 1.]
-            images_tensor = []
+            bg_c =[1., 1., 1.]
+            images_tensor =[]
             for batch_imgs in images:
-                view_imgs = []
+                view_imgs =[]
                 for pil_img in batch_imgs:
                     img = numpy.asarray(pil_img, dtype=numpy.float32) / 255.
                     if img.shape[2] > 3:
                         alpha = img[:, :, 3:]
                         img = img[:, :, :3] * alpha + bg_c * (1 - alpha)
-                    img = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).contiguous().half().to("cuda")
+                    img = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).contiguous().half().to(self._execution_device)
                     view_imgs.append(img)
                 view_imgs = torch.cat(view_imgs, dim=0)
                 images_tensor.append(view_imgs.unsqueeze(0))
@@ -171,13 +172,13 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
             camera_info = cached_condition['camera_info_gen']  # B,N
             if isinstance(camera_info, List):
                 camera_info = torch.tensor(camera_info)
-            camera_info = camera_info.to(image.device).to(torch.int64)
+            camera_info = camera_info.to(self._execution_device).to(torch.int64)
             cached_condition['camera_info_gen'] = camera_info
         if 'camera_info_ref' in cached_condition:
             camera_info = cached_condition['camera_info_ref']  # B,N
             if isinstance(camera_info, List):
                 camera_info = torch.tensor(camera_info)
-            camera_info = camera_info.to(image.device).to(torch.int64)
+            camera_info = camera_info.to(self._execution_device).to(torch.int64)
             cached_condition['camera_info_ref'] = camera_info
 
         cached_condition['ref_latents'] = ref_latents
@@ -224,7 +225,7 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
         ).images
 
         if not output_type == "latent":
-            image_list = []
+            image_list =[]
             for img in latents:
                 image = self.vae.decode(img.unsqueeze(0) / self.vae.config.scaling_factor, return_dict=False)[0]
                 image_list.append(image)
@@ -343,7 +344,7 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
+                Corresponds to parameter eta (Î·) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
                 to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
             generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
@@ -391,9 +392,8 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
 
         Examples:
 
-        Returns:
-            [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] or `tuple`:
-                If `return_dict` is `True`, [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] is returned,
+        Returns:[`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] or `tuple`:
+                If `return_dict` is `True`,[`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] is returned,
                 otherwise a `tuple` is returned where the first element is a list with the generated images and the
                 second element is a list of `bool`s indicating whether the corresponding generated image contains
                 "not-safe-for-work" (nsfw) content.
@@ -525,7 +525,7 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
             guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(batch_size * num_images_per_prompt)
             timestep_cond = self.get_guidance_scale_embedding(
                 guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
-            ).to(device=device, dtype=latents.dtype)
+            ).to(device=self._execution_device, dtype=latents.dtype)
 
         # 7. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
@@ -586,7 +586,7 @@ class HunyuanPaintPipeline(StableDiffusionPipeline):
                         callback(step_idx, t, latents)
 
         if not output_type == "latent":
-            image_list = []
+            image_list =[]
             for img in latents:
                 print("decoding image", img.shape)
                 image = self.vae.decode(img / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
